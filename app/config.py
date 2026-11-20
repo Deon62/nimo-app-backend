@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     paystack_secret_key: str = ""
     paystack_currency: str = "KES"
-    paystack_callback_url: str = "nimo://payment-complete"
+    paystack_callback_url: str = "https://nimo.ardena.co.ke/payment-complete/"
 
     daraja_env: Literal["sandbox", "production"] = "sandbox"
     daraja_consumer_key: str = ""

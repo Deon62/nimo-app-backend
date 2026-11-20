@@ -26,7 +26,7 @@ services:
       - key: PAYSTACK_SECRET_KEY
         sync: false
       - key: PAYSTACK_CALLBACK_URL
-        value: nimo://payment-complete
+        value: https://nimo.ardena.co.ke/payment-complete/
       - key: DARAJA_ENV
         value: sandbox
       - key: DARAJA_CONSUMER_KEY
