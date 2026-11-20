@@ -73,10 +73,11 @@ All except `/health`, `/agents`, `/billing/plans` and `/webhooks/*` need
 - The app never handles card numbers: Paystack's hosted page collects them.
 
 ## Agents and voices
-`app/data/agents.json` is generated from the app's `src/data/agents.ts`:
+`app/data/agents.json` is generated from the app's `src/data/agents.ts` (github.com/Deon62/nimo-app).
+With this repo checked out as `backend/` inside the app folder, run from the app folder:
 
 ```bash
-node --experimental-strip-types backend/scripts/export_agents.mjs   # from the repo root
+node --experimental-strip-types backend/scripts/export_agents.mjs
 ```
 
 ElevenLabs voice IDs live in `src/data/agents.ts`. Ryan has no voice yet and uses
