@@ -133,7 +133,17 @@ async def start_call(
     if plan.daily_minutes is not None and await _minutes_used_today(db, user.id) >= plan.daily_minutes:
         raise HTTPException(402, f"Daily limit of {plan.daily_minutes} minutes reached")
     [call] = await db.insert("calls", {"user_id": user.id, "agent_id": agent.id})
-    return {"call_id": call["id"], "agent": agent.public(), "can_record": plan.can_record}
+    # The app plays the agent's voice preview as the greeting; keep it in the conversation.
+    await db.insert("call_messages", {"call_id": call["id"], "role": "assistant", "content": agent.voice_sample})
+    return {
+        "call_id": call["id"],
+        "agent": agent.public(),
+        "can_record": plan.can_record,
+        "greeting": agent.voice_sample,
+        "minutes_left_today": None
+        if plan.daily_minutes is None
+        else max(0.0, plan.daily_minutes - await _minutes_used_today(db, user.id)),
+    }
 
 
 @router.post("/{call_id}/text")
