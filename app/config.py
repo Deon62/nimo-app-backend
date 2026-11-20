@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -9,7 +10,8 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "staging", "production"] = "development"
     cors_origins: str = "http://localhost:8081"
-    public_base_url: str = "http://localhost:8000"
+    #: Public HTTPS URL used in payment callbacks. On Render this falls back to RENDER_EXTERNAL_URL.
+    public_base_url: str = ""
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""
@@ -39,6 +41,11 @@ class Settings(BaseSettings):
     daraja_callback_token: str = ""
 
     usd_to_kes: float = 129
+
+    @property
+    def callback_base_url(self) -> str:
+        url = self.public_base_url or os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000"
+        return url.rstrip("/")
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -145,7 +145,7 @@ async def mpesa_stk_push(
         amount=amount,
         account_reference=f"Nimo{plan.name}",
         description=f"Nimo {plan.name}",
-        callback_url=f"{settings.public_base_url.rstrip('/')}/webhooks/mpesa/{settings.daraja_callback_token}",
+        callback_url=f"{settings.callback_base_url}/webhooks/mpesa/{settings.daraja_callback_token}",
     )
     await db.insert(
         "payments",

@@ -23,6 +23,18 @@ uvicorn app.main:app --reload --port 8000
 
 API docs: http://localhost:8000/docs · Tests: `pytest`
 
+### Deploy on Render
+1. Render → **New → Blueprint** → choose this repo. `render.yaml` creates the `nimo-api` web service
+   (Python 3.13, free plan, health check `/health`).
+2. Paste the secrets it asks for (Supabase, DeepSeek, ElevenLabs, Paystack, Daraja).
+   `DARAJA_CALLBACK_TOKEN` is generated for you.
+3. Your API URL is `https://<service>.onrender.com`. M-Pesa callbacks use it automatically
+   (`RENDER_EXTERNAL_URL`); set the Paystack webhook to `https://<service>.onrender.com/webhooks/paystack`.
+
+Free services sleep after 15 minutes idle and take about a minute to wake. The first request after a
+pause is slow, and an M-Pesa callback can arrive while it wakes. The app's status polling
+(`/billing/mpesa/status/...`) confirms payments either way. Use a paid instance for production.
+
 ### Supabase
 1. Run `supabase/migrations/0001_init.sql` in the SQL editor (tables, RLS, profile trigger).
 2. Authentication → Providers: enable Email, Google, Apple and Phone (SMS).
@@ -30,7 +42,7 @@ API docs: http://localhost:8000/docs · Tests: `pytest`
    the app uses the anon key.
 
 ### Callbacks (Paystack + M-Pesa)
-Both need a public HTTPS URL. In development run a tunnel (`ngrok http 8000` or `cloudflared`)
+On Render this is automatic. Locally, both need a public HTTPS URL: run a tunnel (`ngrok http 8000` or `cloudflared`)
 and set `PUBLIC_BASE_URL` to it.
 
 - Paystack dashboard → Settings → API Keys & Webhooks → Webhook URL: `<PUBLIC_BASE_URL>/webhooks/paystack`
