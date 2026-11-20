@@ -36,7 +36,8 @@ pause is slow, and an M-Pesa callback can arrive while it wakes. The app's statu
 (`/billing/mpesa/status/...`) confirms payments either way. Use a paid instance for production.
 
 ### Supabase
-1. Run `supabase/migrations/0001_init.sql` in the SQL editor (tables, RLS, profile trigger).
+1. Run `supabase/migrations/0001_init.sql`, then `0002_payment_methods_and_storage.sql`, in the SQL editor
+   (tables, RLS, profile trigger, storage buckets for avatars and recordings).
 2. Authentication → Providers: enable Email, Google, Apple and Phone (SMS).
 3. Put the project URL and **service role** key in `.env`. The service key stays on the server only;
    the app uses the anon key.
@@ -62,8 +63,21 @@ All except `/health`, `/agents`, `/billing/plans` and `/webhooks/*` need
 | POST | `/calls/{id}/voice` | Multipart `audio` → transcript, reply text, reply audio (base64 MP3) |
 | POST | `/calls/{id}/text` | `{text, speak}` → reply text (+ audio) |
 | POST | `/calls/{id}/end` | `{duration_seconds}` |
+| GET | `/calls` | Call history |
+| GET | `/calls/{id}` | One call with its messages |
+| PATCH | `/calls/{id}` | `{recorded}`: turn recording on/off (paid plans) |
+| GET | `/calls/{id}/recording` | Signed links to the recorded segments, in order |
+| DELETE | `/calls/{id}` | Delete a call and its recording |
+| GET | `/agents/{id}/sample/{line}` | MP3 of one line of the agent's sample call |
+| DELETE | `/me` | Delete the account, recordings and photo |
 | GET | `/billing/plans` | Plans with USD and KES prices |
 | GET | `/billing/me` | Current plan |
+| GET | `/billing/usage` | Minutes per day (last 7 days) and today's allowance |
+| GET | `/billing/payment-methods` | Saved cards (from Paystack payments) and M-Pesa numbers |
+| POST | `/billing/payment-methods/mpesa` | `{phone}` save an M-Pesa number |
+| POST | `/billing/payment-methods/{id}/default` | Make default |
+| DELETE | `/billing/payment-methods/{id}` | Remove |
+| POST | `/billing/paystack/charge-saved` | `{plan_id, period, method_id}` pay with a saved card |
 | POST | `/billing/paystack/initialize` | `{plan_id, period}` → `authorization_url` to open in a browser |
 | GET | `/billing/paystack/verify/{reference}` | Confirms the card payment and activates the plan |
 | POST | `/billing/mpesa/stk-push` | `{plan_id, period, phone}` → PIN prompt on the phone |

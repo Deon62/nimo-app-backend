@@ -1,6 +1,7 @@
 """Plans and checkout: Paystack for cards, Daraja STK push for M-Pesa."""
 
 import uuid
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
@@ -113,6 +114,7 @@ async def paystack_verify(
     if data["status"] == "success" and int(data["amount"]) >= payment["amount_minor"]:
         payment = await billing.mark_payment(db, {"id": eq(payment["id"])}, "paid", receipt=str(data.get("id")))
         await billing.activate_from_payment(db, payment)
+        await billing.save_card(db, user.id, (data.get("customer") or {}).get("email"), data.get("authorization"))
         return {"status": "paid", "plan_id": payment["plan_id"]}
     if data["status"] in {"failed", "abandoned", "reversed"}:
         await billing.mark_payment(db, {"id": eq(payment["id"])}, "failed")
@@ -162,6 +164,12 @@ async def mpesa_stk_push(
             "status": "pending",
         },
     )
+    if not await db.select_one("payment_methods", {"user_id": eq(user.id), "kind": eq("mpesa"), "phone": eq(phone)}):
+        has_default = await db.select_one("payment_methods", {"user_id": eq(user.id), "is_default": "is.true"})
+        await db.insert(
+            "payment_methods",
+            {"user_id": user.id, "kind": "mpesa", "phone": phone, "is_default": has_default is None},
+        )
     return {
         "checkout_request_id": result["CheckoutRequestID"],
         "amount_kes": amount,
@@ -196,3 +204,153 @@ async def mpesa_status(
         await billing.mark_payment(db, {"id": eq(payment["id"])}, "failed", failure_reason=query.get("ResultDesc"))
         return {"status": "failed", "reason": query.get("ResultDesc")}
     return {"status": "pending"}
+
+
+class SavedCardCheckout(Checkout):
+    method_id: str
+
+
+@router.post("/paystack/charge-saved")
+async def paystack_charge_saved(
+    body: SavedCardCheckout,
+    user: CurrentUser = Depends(get_current_user),
+    db: Supabase = Depends(get_db),
+    http: httpx.AsyncClient = Depends(get_http),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Pays with a card saved from an earlier Paystack payment. May need 2FA (`authorization_url`)."""
+    method = await db.select_one(
+        "payment_methods", {"id": eq(body.method_id), "user_id": eq(user.id), "kind": eq("card")}
+    )
+    if method is None or not method.get("authorization_code"):
+        raise HTTPException(404, "Card not found")
+    plan = get_plan(body.plan_id)
+    amount = price_kes(plan, body.period, settings.usd_to_kes)
+    reference = f"nimo_{uuid.uuid4().hex}"
+    [payment] = await db.insert(
+        "payments",
+        {
+            "user_id": user.id,
+            "provider": "paystack",
+            "plan_id": plan.id,
+            "period": body.period,
+            "amount_minor": amount * 100,
+            "currency": settings.paystack_currency,
+            "reference": reference,
+            "status": "pending",
+        },
+    )
+    data = await paystack.charge_authorization(
+        http,
+        settings,
+        email=method.get("email") or user.email or "",
+        amount_minor=amount * 100,
+        authorization_code=method["authorization_code"],
+        reference=reference,
+        metadata={"user_id": user.id, "plan_id": plan.id, "period": body.period},
+    )
+    if data.get("paused") and data.get("authorization_url"):
+        return {"status": "action_required", "authorization_url": data["authorization_url"], "reference": reference}
+    if data.get("status") == "success":
+        payment = await billing.mark_payment(db, {"id": eq(payment["id"])}, "paid", receipt=str(data.get("id")))
+        await billing.activate_from_payment(db, payment)
+        return {"status": "paid", "plan_id": plan.id, "reference": reference}
+    await billing.mark_payment(db, {"id": eq(payment["id"])}, "failed", failure_reason=data.get("gateway_response"))
+    return {"status": "failed", "reason": data.get("gateway_response") or "The card was declined"}
+
+
+# --- Saved payment methods ----------------------------------------------------------------------
+
+
+class NewMpesaMethod(BaseModel):
+    phone: str
+
+
+def _public_method(m: dict) -> dict:
+    if m["kind"] == "mpesa":
+        return {"id": m["id"], "kind": "mpesa", "phone": m["phone"], "is_default": m["is_default"]}
+    month, year = (m.get("exp_month") or "").zfill(2), (m.get("exp_year") or "")[-2:]
+    return {
+        "id": m["id"],
+        "kind": "card",
+        "brand": m.get("brand") or "Card",
+        "last4": m.get("last4") or "",
+        "expiry": f"{month}/{year}" if year else "",
+        "is_default": m["is_default"],
+    }
+
+
+@router.get("/payment-methods")
+async def list_payment_methods(user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)) -> list:
+    rows = await db.select("payment_methods", {"user_id": eq(user.id)}, order="created_at.asc")
+    return [_public_method(m) for m in rows]
+
+
+@router.post("/payment-methods/mpesa")
+async def add_mpesa_method(
+    body: NewMpesaMethod, user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)
+) -> dict:
+    phone = normalise_kenyan_phone(body.phone)
+    if phone is None:
+        raise HTTPException(422, "Enter a valid Kenyan mobile number")
+    existing = await db.select_one("payment_methods", {"user_id": eq(user.id), "kind": eq("mpesa"), "phone": eq(phone)})
+    if existing:
+        return _public_method(existing)
+    has_default = await db.select_one("payment_methods", {"user_id": eq(user.id), "is_default": "is.true"})
+    [row] = await db.insert(
+        "payment_methods", {"user_id": user.id, "kind": "mpesa", "phone": phone, "is_default": has_default is None}
+    )
+    return _public_method(row)
+
+
+@router.post("/payment-methods/{method_id}/default")
+async def make_default(
+    method_id: str, user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)
+) -> dict:
+    if not await db.select_one("payment_methods", {"id": eq(method_id), "user_id": eq(user.id)}):
+        raise HTTPException(404, "Payment method not found")
+    await db.update("payment_methods", {"user_id": eq(user.id)}, {"is_default": False})
+    await db.update("payment_methods", {"id": eq(method_id)}, {"is_default": True})
+    return {"ok": True}
+
+
+@router.delete("/payment-methods/{method_id}")
+async def remove_payment_method(
+    method_id: str, user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)
+) -> dict:
+    method = await db.select_one("payment_methods", {"id": eq(method_id), "user_id": eq(user.id)})
+    if method is None:
+        raise HTTPException(404, "Payment method not found")
+    await db.delete("payment_methods", {"id": eq(method_id)})
+    if method["is_default"]:
+        nxt = await db.select_one("payment_methods", {"user_id": eq(user.id)})
+        if nxt:
+            await db.update("payment_methods", {"id": eq(nxt["id"])}, {"is_default": True})
+    return {"ok": True}
+
+
+# --- Usage ---------------------------------------------------------------------------------------
+
+
+@router.get("/usage")
+async def usage(user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)) -> dict:
+    """Minutes talked per day for the last 7 days (UTC days), plus today's allowance."""
+    today = datetime.now(timezone.utc).date()
+    since = today - timedelta(days=6)
+    rows = await db.select(
+        "calls",
+        {"user_id": eq(user.id), "started_at": f"gte.{since.isoformat()}"},
+        columns="started_at,duration_seconds",
+    )
+    per_day: dict[date, int] = {since + timedelta(days=i): 0 for i in range(7)}
+    for r in rows:
+        day = datetime.fromisoformat(r["started_at"]).date()
+        if day in per_day:
+            per_day[day] += r.get("duration_seconds") or 0
+    plan = get_plan(await billing.current_plan_id(db, user.id))
+    return {
+        "plan_id": plan.id,
+        "daily_minutes": plan.daily_minutes,
+        "today_minutes": round(per_day[today] / 60, 1),
+        "days": [{"date": d.isoformat(), "minutes": round(sec / 60, 1)} for d, sec in per_day.items()],
+    }

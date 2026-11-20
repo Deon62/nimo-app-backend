@@ -60,3 +60,32 @@ def signature_is_valid(raw_body: bytes, signature: str | None, secret_key: str) 
         return False
     expected = hmac.new(secret_key.encode(), raw_body, hashlib.sha512).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+async def charge_authorization(
+    http: httpx.AsyncClient,
+    settings: Settings,
+    *,
+    email: str,
+    amount_minor: int,
+    authorization_code: str,
+    reference: str,
+    metadata: dict,
+) -> dict:
+    """Charges a saved card. Returns Paystack's `data`; if `paused` is true, open `authorization_url` for 2FA."""
+    res = await http.post(
+        f"{BASE}/transaction/charge_authorization",
+        headers=_headers(settings),
+        json={
+            "email": email,
+            "amount": amount_minor,
+            "currency": settings.paystack_currency,
+            "authorization_code": authorization_code,
+            "reference": reference,
+            "metadata": metadata,
+        },
+    )
+    body = res.json() if res.content else {}
+    if res.status_code >= 400 or not body.get("status"):
+        raise UpstreamError("Paystack", body.get("message", res.text[:300]))
+    return body["data"]

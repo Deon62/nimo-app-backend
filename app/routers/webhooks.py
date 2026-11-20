@@ -33,6 +33,9 @@ async def paystack_webhook(
         return {"ok": True}
     payment = await billing.mark_payment(db, {"id": eq(payment["id"])}, "paid", receipt=str(data.get("id")))
     await billing.activate_from_payment(db, payment)
+    await billing.save_card(
+        db, payment["user_id"], (data.get("customer") or {}).get("email"), data.get("authorization")
+    )
     return {"ok": True}
 
 

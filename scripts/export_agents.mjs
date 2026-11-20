@@ -19,6 +19,7 @@ const out = agents.map((a) => ({
   instructions: a.instructions,
   voice_id: a.voice.id,
   voice_sample: a.voice.sample,
+  script: a.script,
 }));
 writeFileSync(path.join(here, '../app/data/agents.json'), JSON.stringify(out, null, 2) + '\n');
 console.log(`Exported ${out.length} agents`);

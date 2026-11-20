@@ -47,6 +47,9 @@ class Supabase:
             prefer="return=representation,resolution=merge-duplicates",
         )
 
+    async def delete(self, table: str, filters: dict[str, str]) -> None:
+        await self._request("DELETE", table, params=filters)
+
     async def update(self, table: str, filters: dict[str, str], values: dict) -> list[dict]:
         return await self._request("PATCH", table, params=filters, json=values, prefer="return=representation")
 
@@ -57,3 +60,66 @@ def get_db(http: httpx.AsyncClient = Depends(get_http), settings: Settings = Dep
 
 def eq(value: str) -> str:
     return f"eq.{value}"
+
+
+class Storage:
+    """Supabase Storage via the REST API (service role)."""
+
+    def __init__(self, http: httpx.AsyncClient, settings: Settings):
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            raise NotConfigured("Supabase")
+        self._http = http
+        self._root = settings.supabase_url.rstrip("/")
+        self._base = f"{self._root}/storage/v1"
+        key = settings.supabase_service_role_key
+        self._headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
+    async def upload(self, bucket: str, path: str, data: bytes, content_type: str) -> None:
+        res = await self._http.post(
+            f"{self._base}/object/{bucket}/{path}",
+            content=data,
+            headers={**self._headers, "Content-Type": content_type, "x-upsert": "true"},
+        )
+        if res.status_code >= 400:
+            raise UpstreamError("Supabase Storage", res.text[:300])
+
+    async def list(self, bucket: str, prefix: str) -> list[str]:
+        res = await self._http.post(
+            f"{self._base}/object/list/{bucket}",
+            json={"prefix": prefix, "limit": 1000, "sortBy": {"column": "name", "order": "asc"}},
+            headers=self._headers,
+        )
+        if res.status_code >= 400:
+            raise UpstreamError("Supabase Storage", res.text[:300])
+        return [f"{prefix.rstrip('/')}/{o['name']}" for o in res.json() if o.get("id")]
+
+    async def signed_urls(self, bucket: str, paths: list[str], expires_in: int = 3600) -> list[str]:
+        if not paths:
+            return []
+        res = await self._http.post(
+            f"{self._base}/object/sign/{bucket}",
+            json={"expiresIn": expires_in, "paths": paths},
+            headers=self._headers,
+        )
+        if res.status_code >= 400:
+            raise UpstreamError("Supabase Storage", res.text[:300])
+        return [f"{self._base}{item['signedURL']}" for item in res.json() if item.get("signedURL")]
+
+    async def remove(self, bucket: str, paths: list[str]) -> None:
+        if not paths:
+            return
+        res = await self._http.request(
+            "DELETE", f"{self._base}/object/{bucket}", json={"prefixes": paths}, headers=self._headers
+        )
+        if res.status_code >= 400:
+            raise UpstreamError("Supabase Storage", res.text[:300])
+
+    async def delete_user(self, user_id: str) -> None:
+        """Deletes the auth user; database rows cascade."""
+        res = await self._http.delete(f"{self._root}/auth/v1/admin/users/{user_id}", headers=self._headers)
+        if res.status_code >= 400 and res.status_code != 404:
+            raise UpstreamError("Supabase Auth", res.text[:300])
+
+
+def get_storage(http: httpx.AsyncClient = Depends(get_http), settings: Settings = Depends(get_settings)) -> Storage:
+    return Storage(http, settings)

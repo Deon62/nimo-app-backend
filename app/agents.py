@@ -26,6 +26,12 @@ class Agent:
     instructions: str
     voice_id: str | None
     voice_sample: str
+    #: Sample call: list of {user, agent} turns.
+    script: list[dict]
+
+    def sample_lines(self) -> list[tuple[str, str]]:
+        """Flattened sample call as (speaker, text), speaker being 'user' or 'agent'."""
+        return [line for turn in self.script for line in (("user", turn["user"]), ("agent", turn["agent"]))]
 
     @property
     def effective_voice_id(self) -> str:

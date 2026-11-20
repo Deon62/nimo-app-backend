@@ -23,6 +23,11 @@ def test_agents_loaded_with_voices():
     assert agents["ryan"].effective_voice_id == get_settings().elevenlabs_fallback_voice_id
 
 
+def test_sample_lines_alternate_speakers():
+    lines = all_agents()["alex"].sample_lines()
+    assert lines and lines[0][0] == "user" and lines[1][0] == "agent"
+
+
 def test_prices():
     plus = get_plan("plus")
     assert price_usd(plus, "monthly") == 9.99
@@ -90,6 +95,16 @@ def test_http_endpoints():
         assert plans[1]["prices"]["monthly"]["kes"] == 1289
         # Protected routes need a Supabase token.
         assert client.post("/calls", json={"agent_id": "alex"}).status_code == 401
+        for method, path in [
+            ("get", "/calls"),
+            ("get", "/calls/x/recording"),
+            ("delete", "/calls/x"),
+            ("get", "/billing/usage"),
+            ("get", "/billing/payment-methods"),
+            ("post", "/billing/paystack/charge-saved"),
+            ("delete", "/me"),
+        ]:
+            assert getattr(client, method)(path).status_code in (401, 422), path
         # Unsigned Paystack webhooks are rejected before touching the database.
         get_settings().supabase_url = get_settings().supabase_url or "https://example.supabase.co"
         get_settings().supabase_service_role_key = get_settings().supabase_service_role_key or "test"
