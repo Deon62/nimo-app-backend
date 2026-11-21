@@ -334,14 +334,16 @@ async def remove_payment_method(
 
 @router.get("/usage")
 async def usage(user: CurrentUser = Depends(get_current_user), db: Supabase = Depends(get_db)) -> dict:
-    """Minutes talked per day for the last 7 days (UTC days), plus today's allowance."""
+    """Minutes per day for the last 7 days (UTC days), this month's totals and today's allowance."""
     today = datetime.now(timezone.utc).date()
     since = today - timedelta(days=6)
+    month_start = today.replace(day=1)
     rows = await db.select(
         "calls",
-        {"user_id": eq(user.id), "started_at": f"gte.{since.isoformat()}"},
+        {"user_id": eq(user.id), "started_at": f"gte.{min(since, month_start).isoformat()}"},
         columns="started_at,duration_seconds",
     )
+    month = [r for r in rows if datetime.fromisoformat(r["started_at"]).date() >= month_start]
     per_day: dict[date, int] = {since + timedelta(days=i): 0 for i in range(7)}
     for r in rows:
         day = datetime.fromisoformat(r["started_at"]).date()
@@ -353,4 +355,6 @@ async def usage(user: CurrentUser = Depends(get_current_user), db: Supabase = De
         "daily_minutes": plan.daily_minutes,
         "today_minutes": round(per_day[today] / 60, 1),
         "days": [{"date": d.isoformat(), "minutes": round(sec / 60, 1)} for d, sec in per_day.items()],
+        "month_minutes": round(sum(r.get("duration_seconds") or 0 for r in month) / 60),
+        "month_calls": sum(1 for r in month if (r.get("duration_seconds") or 0) > 0),
     }
