@@ -13,7 +13,7 @@ from app.config import Settings, get_settings
 from app.db import Supabase, eq, get_db
 from app.http import get_http
 from app.phone import normalise_kenyan_phone
-from app.plans import PLANS, get_plan, price_kes, price_usd
+from app.plans import PLANS, RANK, Plan, get_plan, price_kes, price_usd
 from app.services import billing, daraja, paystack
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -59,6 +59,13 @@ async def my_subscription(user: CurrentUser = Depends(get_current_user), db: Sup
 # --- Paystack (cards) ---------------------------------------------------------------------------
 
 
+async def _block_downgrade(db: Supabase, user_id: str, plan: Plan) -> None:
+    """A running paid plan can't be swapped for a lower one; it drops to Free when it expires."""
+    current = await billing.current_plan_id(db, user_id)
+    if RANK[plan.id] < RANK[current]:
+        raise HTTPException(409, f"You're on {get_plan(current).name} until it expires, so you can't switch to {plan.name} yet.")
+
+
 @router.post("/paystack/initialize")
 async def paystack_initialize(
     body: Checkout,
@@ -70,6 +77,7 @@ async def paystack_initialize(
     if not user.email:
         raise HTTPException(400, "Add an email to your account to pay by card")
     plan = get_plan(body.plan_id)
+    await _block_downgrade(db, user.id, plan)
     amount = price_kes(plan, body.period, settings.usd_to_kes)
     reference = f"nimo_{uuid.uuid4().hex}"
     await db.insert(
@@ -139,6 +147,7 @@ async def mpesa_stk_push(
     if not settings.daraja_callback_token:
         raise HTTPException(503, "DARAJA_CALLBACK_TOKEN is not configured")
     plan = get_plan(body.plan_id)
+    await _block_downgrade(db, user.id, plan)
     amount = price_kes(plan, body.period, settings.usd_to_kes)
     result = await daraja.stk_push(
         http,
@@ -225,6 +234,7 @@ async def paystack_charge_saved(
     if method is None or not method.get("authorization_code"):
         raise HTTPException(404, "Card not found")
     plan = get_plan(body.plan_id)
+    await _block_downgrade(db, user.id, plan)
     amount = price_kes(plan, body.period, settings.usd_to_kes)
     reference = f"nimo_{uuid.uuid4().hex}"
     [payment] = await db.insert(

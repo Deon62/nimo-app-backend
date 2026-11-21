@@ -29,6 +29,10 @@ PLANS: dict[str, Plan] = {
 }
 
 
+#: Higher is better; you can't move down while a paid plan is still running.
+RANK: dict[str, int] = {"free": 0, "plus": 1, "pro": 2}
+
+
 def get_plan(plan_id: str) -> Plan:
     plan = PLANS.get(plan_id)
     if plan is None:
