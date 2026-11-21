@@ -36,7 +36,7 @@ pause is slow, and an M-Pesa callback can arrive while it wakes. The app's statu
 (`/billing/mpesa/status/...`) confirms payments either way. Use a paid instance for production.
 
 ### Supabase
-1. Run `supabase/migrations/0001_init.sql`, then `0002_payment_methods_and_storage.sql`, in the SQL editor
+1. Run `supabase/migrations/0001_init.sql`, then `0002_payment_methods_and_storage.sql` and `0003_grants.sql`, in the SQL editor
    (tables, RLS, profile trigger, storage buckets for avatars and recordings).
 2. Authentication → Providers: enable Email, Google, Apple and Phone (SMS).
 3. Put the project URL and **service role** key in `.env`. The service key stays on the server only;
