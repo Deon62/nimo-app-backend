@@ -16,11 +16,11 @@ from app.services import daraja, paystack
 
 def test_agents_loaded_with_voices():
     agents = all_agents()
-    assert len(agents) == 10
+    assert len(agents) == 25
     assert agents["maya"].voice_id == "g6xIsTj2HwM6VR4iXFCw"
-    # Ryan has no voice yet and falls back to the default.
-    assert agents["ryan"].voice_id is None
-    assert agents["ryan"].effective_voice_id == get_settings().elevenlabs_fallback_voice_id
+    # Every contact has its own voice.
+    assert all(a.voice_id for a in agents.values())
+    assert len({a.voice_id for a in agents.values()}) == len(agents)
 
 
 def test_sample_lines_alternate_speakers():
@@ -90,7 +90,7 @@ def test_http_endpoints():
     with TestClient(app) as client:
         assert client.get("/health").json() == {"ok": True}
         agents = client.get("/agents").json()
-        assert len(agents) == 10 and "instructions" not in agents[0]
+        assert len(agents) == 25 and "instructions" not in agents[0]
         plans = client.get("/billing/plans").json()
         assert plans[1]["prices"]["monthly"]["kes"] == 1289
         # Protected routes need a Supabase token.
