@@ -235,7 +235,7 @@ async def recording(
     call = await db.select_one("calls", {"id": eq(call_id), "user_id": eq(user.id)})
     if call is None:
         raise HTTPException(404, "Call not found")
-    paths = await storage.list(RECORDINGS, _recording_prefix(call))
+    paths = await storage.list_paths(RECORDINGS, _recording_prefix(call))
     return {"segments": await storage.signed_urls(RECORDINGS, paths)}
 
 
@@ -249,6 +249,6 @@ async def delete_call(
     call = await db.select_one("calls", {"id": eq(call_id), "user_id": eq(user.id)})
     if call is None:
         raise HTTPException(404, "Call not found")
-    await storage.remove(RECORDINGS, await storage.list(RECORDINGS, _recording_prefix(call)))
+    await storage.remove(RECORDINGS, await storage.list_paths(RECORDINGS, _recording_prefix(call)))
     await db.delete("calls", {"id": eq(call_id)})
     return {"ok": True}

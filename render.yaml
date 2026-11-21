@@ -39,3 +39,11 @@ services:
         sync: false
       - key: DARAJA_CALLBACK_TOKEN
         generateValue: true
+      - key: SEND_SMS_HOOK_SECRET
+        sync: false
+      - key: CELCOM_API_KEY
+        sync: false
+      - key: CELCOM_PARTNER_ID
+        sync: false
+      - key: CELCOM_SHORTCODE
+        sync: false

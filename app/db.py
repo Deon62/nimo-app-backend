@@ -83,7 +83,7 @@ class Storage:
         if res.status_code >= 400:
             raise UpstreamError("Supabase Storage", res.text[:300])
 
-    async def list(self, bucket: str, prefix: str) -> list[str]:
+    async def list_paths(self, bucket: str, prefix: str) -> list[str]:
         res = await self._http.post(
             f"{self._base}/object/list/{bucket}",
             json={"prefix": prefix, "limit": 1000, "sortBy": {"column": "name", "order": "asc"}},

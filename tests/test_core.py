@@ -109,3 +109,39 @@ def test_http_endpoints():
         get_settings().supabase_url = get_settings().supabase_url or "https://example.supabase.co"
         get_settings().supabase_service_role_key = get_settings().supabase_service_role_key or "test"
         assert client.post("/webhooks/paystack", content=b"{}").status_code == 401
+
+
+def test_annotations_evaluate():
+    """Render runs Python 3.13, where a method named like a builtin (e.g. `list`) breaks later
+    `list[str]` hints at import time. Python 3.14 defers that, so force every hint to evaluate."""
+    import importlib
+    import inspect
+    import pkgutil
+
+    import app
+
+    for mod_info in pkgutil.walk_packages(app.__path__, "app."):
+        module = importlib.import_module(mod_info.name)
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if cls.__module__ != module.__name__:
+                continue
+            for _, fn in inspect.getmembers(cls, inspect.isfunction):
+                fn.__annotations__  # raises if a hint can't be evaluated
+
+
+def test_sms_hook_signature():
+    import base64
+    import hashlib
+    import hmac
+    import time
+
+    from app.routers.hooks import signature_is_valid
+
+    raw = b"0123456789abcdef0123456789abcdef"
+    secret = "v1,whsec_" + base64.b64encode(raw).decode()
+    ts = str(int(time.time()))
+    body = b'{"user":{"phone":"254712345678"},"sms":{"otp":"123456"}}'
+    sig = base64.b64encode(hmac.new(raw, f"msg_1.{ts}.".encode() + body, hashlib.sha256).digest()).decode()
+    assert signature_is_valid(secret, "msg_1", ts, body, f"v1,{sig}")
+    assert not signature_is_valid(secret, "msg_1", ts, body + b" ", f"v1,{sig}")
+    assert not signature_is_valid(secret, "msg_1", str(int(ts) - 3600), body, f"v1,{sig}")

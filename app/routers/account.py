@@ -15,7 +15,7 @@ async def delete_account(
     """Deletes the user's recordings, photo and account. Profile, calls and payment methods cascade;
     payment records are kept without the user link (tax records), see migration 0002."""
     for call in await db.select("calls", {"user_id": eq(user.id)}, columns="id"):
-        await storage.remove("recordings", await storage.list("recordings", f"{user.id}/{call['id']}"))
-    await storage.remove("avatars", await storage.list("avatars", user.id))
+        await storage.remove("recordings", await storage.list_paths("recordings", f"{user.id}/{call['id']}"))
+    await storage.remove("avatars", await storage.list_paths("avatars", user.id))
     await storage.delete_user(user.id)
     return {"ok": True}

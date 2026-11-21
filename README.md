@@ -108,3 +108,15 @@ node --experimental-strip-types backend/scripts/export_agents.mjs
 
 ElevenLabs voice IDs live in `src/data/agents.ts`. Ryan has no voice yet and uses
 `ELEVENLABS_FALLBACK_VOICE_ID` until his custom voice is generated.
+
+## Phone sign-in SMS (Celcom Africa)
+
+Supabase still creates the code and signs the user in; it calls this API to deliver the SMS.
+
+1. Supabase > Authentication > Sign In / Providers: enable **Phone**.
+2. Supabase > Authentication > Hooks: add a **Send SMS** hook, type HTTPS,
+   URL `https://nimo-app-backend.onrender.com/hooks/send-sms`. Generate a secret.
+3. On Render set `SEND_SMS_HOOK_SECRET` (that secret, `v1,whsec_...`), `CELCOM_API_KEY`,
+   `CELCOM_PARTNER_ID` and `CELCOM_SHORTCODE` (your sender ID).
+
+The hook checks the Standard Webhooks signature, then sends "Your Nimo code is ..." via Celcom.

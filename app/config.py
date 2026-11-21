@@ -42,6 +42,12 @@ class Settings(BaseSettings):
 
     usd_to_kes: float = 129
 
+    # SMS codes for phone sign-in: Supabase's Send SMS hook calls us, we send via Celcom Africa.
+    send_sms_hook_secret: str = ""  # "v1,whsec_..." from Supabase > Authentication > Hooks
+    celcom_api_key: str = ""
+    celcom_partner_id: str = ""
+    celcom_shortcode: str = ""  # your registered sender ID
+
     @property
     def callback_base_url(self) -> str:
         url = self.public_base_url or os.environ.get("RENDER_EXTERNAL_URL") or "http://localhost:8000"
