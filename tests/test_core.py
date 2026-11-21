@@ -145,3 +145,30 @@ def test_sms_hook_signature():
     assert signature_is_valid(secret, "msg_1", ts, body, f"v1,{sig}")
     assert not signature_is_valid(secret, "msg_1", ts, body + b" ", f"v1,{sig}")
     assert not signature_is_valid(secret, "msg_1", str(int(ts) - 3600), body, f"v1,{sig}")
+
+
+def test_reply_detects_end_call(monkeypatch):
+    import asyncio
+
+    from app.routers import calls
+
+    class FakeDb:
+        inserted: list = []
+
+        async def select(self, *a, **k):
+            return []
+
+        async def insert(self, table, rows):
+            self.inserted.append(rows)
+            return rows
+
+    async def fake_chat(http, settings, messages):
+        assert calls.END_CALL_TOKEN in messages[0]["content"]
+        return "Bye for now, take care! [END_CALL]"
+
+    monkeypatch.setattr(calls.deepseek, "chat", fake_chat)
+    db = FakeDb()
+    res = asyncio.run(calls._reply(db, None, get_settings(), {"id": "c1", "agent_id": "alex"}, "Hang up please", False))
+    assert res["end_call"] is True
+    assert res["reply"] == "Bye for now, take care!"
+    assert calls.END_CALL_TOKEN not in str(db.inserted)

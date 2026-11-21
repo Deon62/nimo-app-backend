@@ -19,6 +19,14 @@ from app.services import billing, deepseek, elevenlabs
 router = APIRouter(prefix="/calls", tags=["calls"])
 
 HISTORY_TURNS = 20
+
+#: The model ends its reply with this when the caller wants to hang up; it's stripped before speaking.
+END_CALL_TOKEN = "[END_CALL]"
+END_CALL_RULE = (
+    "If the caller asks you to hang up or end the call, or clearly says goodbye to finish the conversation, "
+    f"reply with one short, warm goodbye and put {END_CALL_TOKEN} at the very end. "
+    f"Never use {END_CALL_TOKEN} otherwise, and never say it out loud."
+)
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 
 
@@ -98,11 +106,13 @@ async def _reply(
     history = await db.select(
         "call_messages", {"call_id": eq(call["id"])}, columns="role,content", order="id.desc", limit=str(HISTORY_TURNS)
     )
-    messages = [{"role": "system", "content": agent.instructions}]
+    messages = [{"role": "system", "content": agent.instructions + "\n\n" + END_CALL_RULE}]
     messages += [{"role": m["role"], "content": m["content"]} for m in reversed(history)]
     messages.append({"role": "user", "content": user_text})
 
     reply = await deepseek.chat(http, settings, messages)
+    end_call = END_CALL_TOKEN in reply
+    reply = reply.replace(END_CALL_TOKEN, "").strip() or "Okay, bye for now!"
     await db.insert(
         "call_messages",
         [
@@ -121,6 +131,7 @@ async def _reply(
         "reply": reply,
         "audio_base64": base64.b64encode(audio).decode() if audio else None,
         "audio_mime": "audio/mpeg" if audio else None,
+        "end_call": end_call,
     }
 
 
@@ -179,7 +190,7 @@ async def voice_turn(
         http, settings, data, audio.filename or "speech.m4a", audio.content_type or "audio/mp4"
     )
     if not text:
-        return {"transcript": "", "reply": None, "audio_base64": None, "audio_mime": None}
+        return {"transcript": "", "reply": None, "audio_base64": None, "audio_mime": None, "end_call": False}
     content_type = audio.content_type or "audio/mp4"
     return await _reply(db, http, settings, call, text, True, storage, (data, content_type))
 
