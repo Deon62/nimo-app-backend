@@ -1,5 +1,6 @@
 """Tiny Supabase (PostgREST) client using the service-role key. Server-side only."""
 
+import logging
 from typing import Any
 
 import httpx
@@ -8,6 +9,8 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.errors import NotConfigured, UpstreamError
 from app.http import get_http
+
+log = logging.getLogger("nimo.supabase")
 
 
 class Supabase:
@@ -25,6 +28,8 @@ class Supabase:
             headers["Prefer"] = prefer
         res = await self._http.request(method, f"{self._base}/{table}", params=params, json=json, headers=headers)
         if res.status_code >= 400:
+            # e.g. {"code":"42501","message":"permission denied for table calls"} — the role lacks a grant.
+            log.error("%s %s -> %d: %s", method, table, res.status_code, res.text[:1000])
             raise UpstreamError("Supabase", res.text[:300])
         return res.json() if res.content else None
 
@@ -81,6 +86,7 @@ class Storage:
             headers={**self._headers, "Content-Type": content_type, "x-upsert": "true"},
         )
         if res.status_code >= 400:
+            log.error("storage -> %d: %s", res.status_code, res.text[:1000])
             raise UpstreamError("Supabase Storage", res.text[:300])
 
     async def list_paths(self, bucket: str, prefix: str) -> list[str]:
@@ -90,6 +96,7 @@ class Storage:
             headers=self._headers,
         )
         if res.status_code >= 400:
+            log.error("storage -> %d: %s", res.status_code, res.text[:1000])
             raise UpstreamError("Supabase Storage", res.text[:300])
         return [f"{prefix.rstrip('/')}/{o['name']}" for o in res.json() if o.get("id")]
 
@@ -102,6 +109,7 @@ class Storage:
             headers=self._headers,
         )
         if res.status_code >= 400:
+            log.error("storage -> %d: %s", res.status_code, res.text[:1000])
             raise UpstreamError("Supabase Storage", res.text[:300])
         return [f"{self._base}{item['signedURL']}" for item in res.json() if item.get("signedURL")]
 
@@ -112,6 +120,7 @@ class Storage:
             "DELETE", f"{self._base}/object/{bucket}", json={"prefixes": paths}, headers=self._headers
         )
         if res.status_code >= 400:
+            log.error("storage -> %d: %s", res.status_code, res.text[:1000])
             raise UpstreamError("Supabase Storage", res.text[:300])
 
     async def delete_user(self, user_id: str) -> None:

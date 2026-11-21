@@ -1,11 +1,16 @@
+import logging
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.http import create_client
 from app.routers import account, agents, billing, calls, hooks, webhooks
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("nimo")
 
 
 @asynccontextmanager
@@ -29,6 +34,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """One line per request (method, path, status, time) so failures show up in the server logs."""
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        log.exception("%s %s crashed", request.method, request.url.path)
+        raise
+    ms = (time.perf_counter() - started) * 1000
+    level = logging.WARNING if response.status_code >= 400 else logging.INFO
+    log.log(level, "%s %s -> %d (%.0f ms)", request.method, request.url.path, response.status_code, ms)
+    return response
+
 
 app.include_router(agents.router)
 app.include_router(calls.router)
